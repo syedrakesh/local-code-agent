@@ -1,0 +1,3 @@
+This file must be replaced with a real 128x128 PNG icon before publishing.
+Run: convert -size 128x128 xc:'#1e1e2e' -fill '#89b4fa' -draw 'circle 64,64 64,14' media/icon.png
+Or simply provide your own icon.png in the media/ folder.

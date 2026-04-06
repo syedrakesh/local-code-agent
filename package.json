@@ -1,0 +1,166 @@
+{
+  "name": "local-code-agent",
+  "displayName": "Local Code Agent",
+  "description": "A local AI coding assistant powered by Ollama — workspace-aware, privacy-first, no cloud required.",
+  "version": "0.1.0",
+  "publisher": "local-code-agent",
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other", "Machine Learning"],
+  "keywords": ["ai", "ollama", "coding assistant", "local llm", "gemma"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "icon": "media/icon.png",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "localCodeAgent",
+          "title": "Local Code Agent",
+          "icon": "media/activity-bar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "localCodeAgent": [
+        {
+          "type": "webview",
+          "id": "localCodeAgent.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      { "command": "localCodeAgent.openPanel",           "title": "Local Code Agent: Open Panel" },
+      { "command": "localCodeAgent.newChat",             "title": "Local Code Agent: New Chat" },
+      { "command": "localCodeAgent.askAboutFile",        "title": "Local Code Agent: Ask About Current File" },
+      { "command": "localCodeAgent.askAboutSelection",   "title": "Local Code Agent: Ask About Selection" },
+      { "command": "localCodeAgent.scanWorkspace",       "title": "Local Code Agent: Scan Workspace" },
+      { "command": "localCodeAgent.proposeFix",          "title": "Local Code Agent: Propose Fix for Current Error" },
+      { "command": "localCodeAgent.refactorFile",        "title": "Local Code Agent: Refactor Current File" },
+      { "command": "localCodeAgent.reviewGitDiff",       "title": "Local Code Agent: Review Git Diff" },
+      { "command": "localCodeAgent.generateTests",       "title": "Local Code Agent: Generate Tests for Current File" },
+      { "command": "localCodeAgent.explainStructure",    "title": "Local Code Agent: Explain Project Structure" },
+      { "command": "localCodeAgent.runApprovedCommand",  "title": "Local Code Agent: Run Approved Command" },
+      { "command": "localCodeAgent.checkBackend",        "title": "Local Code Agent: Check Backend" },
+      { "command": "localCodeAgent.explainFunction",     "title": "Local Code Agent: Explain Current Function" }
+    ],
+    "menus": {
+      "editor/context": [
+        { "command": "localCodeAgent.askAboutSelection",  "group": "localCodeAgent@1", "when": "editorHasSelection" },
+        { "command": "localCodeAgent.askAboutFile",       "group": "localCodeAgent@2" },
+        { "command": "localCodeAgent.explainFunction",    "group": "localCodeAgent@3", "when": "editorHasSelection" },
+        { "command": "localCodeAgent.proposeFix",         "group": "localCodeAgent@4" }
+      ],
+      "commandPalette": [
+        { "command": "localCodeAgent.askAboutSelection", "when": "editorHasSelection" }
+      ]
+    },
+    "configuration": {
+      "title": "Local Code Agent",
+      "properties": {
+        "localCodeAgent.backend": {
+          "type": "string",
+          "enum": ["ollama-api", "ollama-launch"],
+          "default": "ollama-api",
+          "description": "Backend mode: 'ollama-api' (recommended) or 'ollama-launch' (terminal-based fallback)."
+        },
+        "localCodeAgent.ollama.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Base URL for the Ollama HTTP API."
+        },
+        "localCodeAgent.ollama.model": {
+          "type": "string",
+          "default": "gemma4:e2b",
+          "description": "Ollama model name to use."
+        },
+        "localCodeAgent.ollama.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Sampling temperature for generation."
+        },
+        "localCodeAgent.ollama.topP": {
+          "type": "number",
+          "default": 0.9,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Top-p sampling value."
+        },
+        "localCodeAgent.ollama.numPredict": {
+          "type": "number",
+          "default": 4096,
+          "description": "Max tokens to generate per response."
+        },
+        "localCodeAgent.ollama.keepAlive": {
+          "type": "string",
+          "default": "5m",
+          "description": "How long to keep the model loaded (e.g. '5m', '1h', '-1' for always)."
+        },
+        "localCodeAgent.maxFilesInContext": {
+          "type": "number",
+          "default": 10,
+          "description": "Maximum number of files to include in workspace context."
+        },
+        "localCodeAgent.maxFileBytes": {
+          "type": "number",
+          "default": 65536,
+          "description": "Maximum bytes per file before chunking/summarizing."
+        },
+        "localCodeAgent.excludeGlobs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.next/**", "**/__pycache__/**", "**/*.min.js", "**/*.lock"],
+          "description": "Glob patterns to exclude from workspace scanning."
+        },
+        "localCodeAgent.includeGitStatus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include git status in workspace context."
+        },
+        "localCodeAgent.enableTerminalExecution": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow the assistant to propose terminal commands."
+        },
+        "localCodeAgent.requireTerminalApproval": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require explicit approval before running any terminal command."
+        },
+        "localCodeAgent.autoOpenDiffPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open diff preview when edits are proposed."
+        },
+        "localCodeAgent.logLevel": {
+          "type": "string",
+          "enum": ["off", "error", "warn", "info", "debug"],
+          "default": "info",
+          "description": "Extension log level."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run bundle",
+    "bundle": "node esbuild.config.js --production",
+    "dev": "node esbuild.config.js --watch",
+    "compile": "tsc --noEmit",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {}
+}

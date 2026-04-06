@@ -1,0 +1,950 @@
+<!-- src/webview/chat.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local Code Agent</title>
+  <style>
+    :root {
+      --bg: var(--vscode-sideBar-background, #1e1e2e);
+      --bg2: var(--vscode-editor-background, #181825);
+      --bg3: var(--vscode-input-background, #2a2a3d);
+      --fg: var(--vscode-sideBar-foreground, #cdd6f4);
+      --fg2: var(--vscode-descriptionForeground, #a6adc8);
+      --accent: var(--vscode-button-background, #89b4fa);
+      --accent-fg: var(--vscode-button-foreground, #1e1e2e);
+      --border: var(--vscode-panel-border, #313244);
+      --error: var(--vscode-errorForeground, #f38ba8);
+      --warn: var(--vscode-editorWarning-foreground, #fab387);
+      --success: var(--vscode-testing-iconPassed, #a6e3a1);
+      --user-bubble: var(--vscode-badge-background, #313244);
+      --assistant-bubble: var(--vscode-editor-background, #1e1e2e);
+      --scrollbar: var(--vscode-scrollbarSlider-background, #45475a);
+      --font: var(--vscode-font-family, 'Segoe UI', system-ui, sans-serif);
+      --mono: var(--vscode-editor-font-family, 'Cascadia Code', 'Consolas', monospace);
+      --radius: 8px;
+      --radius-sm: 4px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--fg);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+
+    /* ── Header ── */
+    #header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+      flex-shrink: 0;
+    }
+
+    #header h1 { font-size: 12px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9; }
+
+    .header-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--fg2);
+      border-radius: var(--radius-sm);
+      padding: 2px 7px;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .header-btn:hover { background: var(--bg3); color: var(--fg); }
+    .header-btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+    .header-btn.primary:hover { opacity: 0.85; }
+
+    /* ── Model selector ── */
+    #model-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+      flex-shrink: 0;
+    }
+    #model-bar label { font-size: 11px; color: var(--fg2); white-space: nowrap; }
+    #model-select {
+      flex: 1;
+      background: var(--bg3);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 2px 6px;
+      font-size: 11px;
+    }
+    #workspace-root {
+      font-size: 10px;
+      color: var(--fg2);
+      font-family: var(--mono);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 160px;
+      cursor: help;
+    }
+
+    /* ── Sessions sidebar ── */
+    #sessions-panel {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+    #sessions-panel.collapsed { max-height: 0; }
+    #sessions-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--fg2);
+      user-select: none;
+    }
+    #sessions-toggle:hover { color: var(--fg); }
+    .session-item {
+      display: flex;
+      align-items: center;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 11px;
+      gap: 6px;
+      border-left: 2px solid transparent;
+    }
+    .session-item:hover { background: var(--bg3); }
+    .session-item.active { border-left-color: var(--accent); background: var(--bg3); }
+    .session-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .session-delete { opacity: 0; cursor: pointer; font-size: 10px; padding: 2px 4px; border-radius: 3px; }
+    .session-item:hover .session-delete { opacity: 0.5; }
+    .session-delete:hover { opacity: 1 !important; color: var(--error); }
+
+    /* ── Messages area ── */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .message { display: flex; flex-direction: column; gap: 4px; max-width: 100%; animation: fadeIn 0.15s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    .message-role {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      opacity: 0.5;
+      padding: 0 2px;
+    }
+    .message.user .message-role { color: var(--accent); }
+    .message.assistant .message-role { color: var(--success); }
+    .message.system .message-role { color: var(--fg2); }
+
+    .message-body {
+      background: var(--bg2);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      line-height: 1.6;
+      word-break: break-word;
+      border: 1px solid var(--border);
+    }
+    .message.user .message-body { background: var(--user-bubble); border-color: transparent; }
+    .message.assistant .message-body { background: var(--assistant-bubble); }
+
+    /* Markdown rendering */
+    .message-body pre {
+      background: var(--bg3);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      margin: 8px 0;
+      border: 1px solid var(--border);
+    }
+    .message-body code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--bg3);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .message-body pre code { background: none; padding: 0; }
+    .message-body p { margin: 6px 0; }
+    .message-body p:first-child { margin-top: 0; }
+    .message-body p:last-child { margin-bottom: 0; }
+    .message-body ul, .message-body ol { padding-left: 18px; margin: 6px 0; }
+    .message-body li { margin: 2px 0; }
+    .message-body h1,.message-body h2,.message-body h3,.message-body h4 { margin: 10px 0 4px; font-weight: 600; }
+    .message-body h1 { font-size: 15px; }
+    .message-body h2 { font-size: 13px; }
+    .message-body h3,.message-body h4 { font-size: 12px; }
+    .message-body blockquote { border-left: 3px solid var(--accent); padding-left: 10px; margin: 8px 0; opacity: 0.8; }
+    .message-body strong { font-weight: 600; }
+    .message-body em { font-style: italic; opacity: 0.9; }
+    .message-body a { color: var(--accent); text-decoration: none; }
+    .message-body a:hover { text-decoration: underline; }
+    .message-body hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+
+    /* ── Streaming cursor ── */
+    .streaming-cursor { display: inline-block; width: 2px; height: 1em; background: var(--accent); margin-left: 2px; animation: blink 1s step-end infinite; vertical-align: text-bottom; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* ── Working state ── */
+    #working-state {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      font-size: 11px;
+      color: var(--fg2);
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+    }
+    #working-state.visible { display: flex; }
+    .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Patch proposal card ── */
+    .patch-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--warn);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .patch-card-title { font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+    .patch-card-title span { font-size: 14px; }
+    .patch-card-summary { font-size: 11px; color: var(--fg2); }
+    .patch-edits { font-size: 11px; font-family: var(--mono); color: var(--fg2); }
+    .patch-edit-item { padding: 2px 0; }
+    .patch-actions { display: flex; gap: 6px; }
+    .patch-btn { padding: 4px 10px; font-size: 11px; border-radius: var(--radius-sm); cursor: pointer; border: 1px solid; transition: all 0.15s; }
+    .patch-btn.accept { background: var(--success); color: var(--bg); border-color: var(--success); }
+    .patch-btn.accept:hover { opacity: 0.85; }
+    .patch-btn.reject { background: none; color: var(--error); border-color: var(--error); }
+    .patch-btn.reject:hover { background: var(--error); color: var(--bg); }
+    .patch-btn.preview { background: none; color: var(--fg2); border-color: var(--border); }
+    .patch-btn.preview:hover { color: var(--fg); border-color: var(--fg2); }
+
+    /* ── Terminal approval card ── */
+    .terminal-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--error);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .terminal-card-title { font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+    .terminal-command { font-family: var(--mono); font-size: 12px; background: var(--bg2); padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+    .terminal-risk { font-size: 11px; color: var(--warn); }
+    .terminal-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .term-btn { padding: 4px 10px; font-size: 11px; border-radius: var(--radius-sm); cursor: pointer; border: 1px solid; transition: all 0.15s; }
+    .term-btn.run { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+    .term-btn.run:hover { opacity: 0.85; }
+    .term-btn.always { background: none; color: var(--warn); border-color: var(--warn); }
+    .term-btn.always:hover { background: var(--warn); color: var(--bg); }
+    .term-btn.cancel { background: none; color: var(--error); border-color: var(--error); }
+    .term-btn.cancel:hover { background: var(--error); color: var(--bg); }
+
+    /* ── Empty state ── */
+    #empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 8px;
+      color: var(--fg2);
+      text-align: center;
+      padding: 20px;
+    }
+    #empty-state .icon { font-size: 32px; opacity: 0.4; }
+    #empty-state h2 { font-size: 14px; font-weight: 600; opacity: 0.7; }
+    #empty-state p { font-size: 11px; opacity: 0.5; line-height: 1.6; max-width: 200px; }
+
+    /* ── Context chips ── */
+    #context-chips {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      padding: 4px 10px 0;
+    }
+    .chip {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 7px;
+      font-size: 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.15s;
+      color: var(--fg2);
+      background: var(--bg2);
+      user-select: none;
+    }
+    .chip.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+    .chip:hover { border-color: var(--fg2); color: var(--fg); }
+
+    /* ── Input area ── */
+    #input-area {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px 10px;
+      border-top: 1px solid var(--border);
+      background: var(--bg2);
+      flex-shrink: 0;
+    }
+    #prompt-input {
+      width: 100%;
+      min-height: 60px;
+      max-height: 200px;
+      background: var(--bg3);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      font-family: var(--font);
+      font-size: 13px;
+      resize: vertical;
+      line-height: 1.5;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #prompt-input:focus { border-color: var(--accent); }
+    #prompt-input::placeholder { color: var(--fg2); opacity: 0.5; }
+
+    #input-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    #send-btn {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    #send-btn:hover { opacity: 0.85; }
+    #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #stop-btn {
+      display: none;
+      background: none;
+      color: var(--error);
+      border: 1px solid var(--error);
+      border-radius: var(--radius-sm);
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #stop-btn.visible { display: block; }
+    #stop-btn:hover { background: var(--error); color: var(--bg); }
+
+    .input-hint { font-size: 10px; color: var(--fg2); opacity: 0.5; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <h1>⚡ Local Code Agent</h1>
+  <button class="header-btn" id="check-backend-btn" title="Check Ollama backend status">⚙ Status</button>
+  <button class="header-btn primary" id="new-chat-btn">+ New</button>
+</div>
+
+<!-- Model bar -->
+<div id="model-bar">
+  <label>Model:</label>
+  <select id="model-select"></select>
+  <span id="workspace-root" title="Workspace root"></span>
+</div>
+
+<!-- Sessions panel -->
+<div id="sessions-panel">
+  <div id="sessions-toggle">
+    <span>💬 Chats</span>
+    <span id="sessions-arrow">▾</span>
+  </div>
+  <div id="sessions-list"></div>
+</div>
+
+<!-- Messages -->
+<div id="messages">
+  <div id="empty-state">
+    <div class="icon">🤖</div>
+    <h2>Local Code Agent</h2>
+    <p>Powered by Ollama — completely local, no cloud required.</p>
+  </div>
+</div>
+
+<!-- Working state -->
+<div id="working-state">
+  <div class="spinner"></div>
+  <span id="working-label">Thinking…</span>
+  <button id="stop-btn">Stop</button>
+</div>
+
+<!-- Context chips -->
+<div id="context-chips">
+  <div class="chip" id="chip-file" title="Include content of the active file">📄 File</div>
+  <div class="chip" id="chip-selection" title="Include current selection">✂️ Selection</div>
+  <div class="chip" id="chip-tabs" title="Include list of open tabs">📑 Tabs</div>
+  <div class="chip" id="chip-scan" title="Scan workspace before sending">🔍 Scan</div>
+</div>
+
+<!-- Input -->
+<div id="input-area">
+  <textarea id="prompt-input" placeholder="Ask anything about your workspace… (Ctrl+Enter to send)" rows="3"></textarea>
+  <div id="input-actions">
+    <span class="input-hint">Ctrl+Enter to send</span>
+    <div style="display:flex;gap:6px">
+      <button id="stop-btn" title="Stop generation">■ Stop</button>
+      <button id="send-btn">Send ↑</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ──────────────────────────────────────────────────────────────────────────
+  // VS Code API
+  // ──────────────────────────────────────────────────────────────────────────
+  const vscode = acquireVsCodeApi();
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // State
+  // ──────────────────────────────────────────────────────────────────────────
+  let state = {
+    sessions: [],
+    activeSessionId: null,
+    models: [],
+    currentModel: '',
+    workspaceRoot: '',
+    streaming: false,
+    streamBuffer: '',
+    sessionsCollapsed: false,
+    chips: { file: false, selection: false, tabs: false, scan: false },
+  };
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // DOM refs
+  // ──────────────────────────────────────────────────────────────────────────
+  const $messages      = document.getElementById('messages');
+  const $input         = document.getElementById('prompt-input');
+  const $sendBtn       = document.getElementById('send-btn');
+  const $stopBtn       = document.getElementById('stop-btn');
+  const $workingState  = document.getElementById('working-state');
+  const $workingLabel  = document.getElementById('working-label');
+  const $modelSelect   = document.getElementById('model-select');
+  const $workspaceRoot = document.getElementById('workspace-root');
+  const $sessionsList  = document.getElementById('sessions-list');
+  const $sessionsPanel = document.getElementById('sessions-panel');
+  const $emptyState    = document.getElementById('empty-state');
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Message handlers (from extension)
+  // ──────────────────────────────────────────────────────────────────────────
+  window.addEventListener('message', e => {
+    const msg = e.data;
+    switch (msg.type) {
+      case 'init':
+        state.sessions = msg.sessions;
+        state.activeSessionId = msg.activeSessionId;
+        state.models = msg.models;
+        state.currentModel = msg.currentModel;
+        state.workspaceRoot = msg.workspaceRoot;
+        renderAll();
+        break;
+      case 'sessions':
+        state.sessions = msg.sessions;
+        renderSessions();
+        break;
+      case 'sessionUpdate':
+        { const idx = state.sessions.findIndex(s => s.id === msg.session.id);
+          if (idx >= 0) state.sessions[idx] = msg.session;
+          else state.sessions.unshift(msg.session);
+          if (msg.session.id === state.activeSessionId) renderMessages(msg.session); }
+        renderSessions();
+        break;
+      case 'streamToken':
+        if (msg.sessionId === state.activeSessionId) appendStreamToken(msg.token);
+        break;
+      case 'streamDone':
+        if (msg.sessionId === state.activeSessionId) finalizeStream();
+        break;
+      case 'streamError':
+        if (msg.sessionId === state.activeSessionId) {
+          finalizeStream();
+          appendError(msg.error);
+        }
+        break;
+      case 'patchProposal':
+        appendPatchCard(msg.proposal);
+        break;
+      case 'terminalCommand':
+        appendTerminalCard(msg.command);
+        break;
+      case 'workingState':
+        setWorkingState(msg.state, msg.label);
+        break;
+      case 'modelList':
+        state.models = msg.models;
+        renderModelSelect();
+        break;
+      case 'healthStatus':
+        // Handled by extension layer (modal)
+        break;
+      case 'error':
+        appendError(msg.message);
+        break;
+    }
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Render
+  // ──────────────────────────────────────────────────────────────────────────
+  function renderAll() {
+    renderModelSelect();
+    renderSessions();
+    $workspaceRoot.textContent = shortPath(state.workspaceRoot);
+    $workspaceRoot.title = state.workspaceRoot;
+    const active = state.sessions.find(s => s.id === state.activeSessionId);
+    if (active) renderMessages(active);
+    else showEmptyState();
+  }
+
+  function renderModelSelect() {
+    const cur = state.currentModel || $modelSelect.value;
+    $modelSelect.innerHTML = '';
+    const models = state.models.length > 0 ? state.models : [state.currentModel].filter(Boolean);
+    for (const m of models) {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      if (m === cur) opt.selected = true;
+      $modelSelect.appendChild(opt);
+    }
+    // If current not in list, add it
+    if (!models.includes(cur) && cur) {
+      const opt = document.createElement('option');
+      opt.value = cur; opt.textContent = cur; opt.selected = true;
+      $modelSelect.insertBefore(opt, $modelSelect.firstChild);
+    }
+  }
+
+  function renderSessions() {
+    $sessionsList.innerHTML = '';
+    for (const s of state.sessions.slice().sort((a, b) => b.updatedAt - a.updatedAt)) {
+      const item = document.createElement('div');
+      item.className = 'session-item' + (s.id === state.activeSessionId ? ' active' : '');
+      item.dataset.id = s.id;
+      item.innerHTML = `<span class="session-title" title="${escHtml(s.title)}">${escHtml(s.title)}</span><span class="session-delete" title="Delete">✕</span>`;
+      item.querySelector('.session-title').addEventListener('click', () => selectSession(s.id));
+      item.querySelector('.session-delete').addEventListener('click', e => { e.stopPropagation(); deleteSession(s.id); });
+      $sessionsList.appendChild(item);
+    }
+  }
+
+  function renderMessages(session) {
+    $messages.innerHTML = '';
+    if (!session || session.messages.length === 0) { showEmptyState(); return; }
+    $emptyState && $emptyState.remove && $messages.contains($emptyState) && $messages.removeChild($emptyState);
+
+    for (const msg of session.messages) {
+      if (msg.role === 'system') continue;
+      appendMessage(msg.role, msg.content, false);
+    }
+    scrollToBottom();
+  }
+
+  function showEmptyState() {
+    $messages.innerHTML = '';
+    if (!$messages.contains(document.getElementById('empty-state'))) {
+      $messages.appendChild(document.getElementById('empty-state') || createEmptyState());
+    }
+  }
+
+  function createEmptyState() {
+    const d = document.createElement('div');
+    d.id = 'empty-state';
+    d.innerHTML = `<div class="icon">🤖</div><h2>Local Code Agent</h2><p>Powered by Ollama — completely local, no cloud required.</p>`;
+    d.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:8px;color:var(--fg2);text-align:center;padding:20px;';
+    return d;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Message rendering
+  // ──────────────────────────────────────────────────────────────────────────
+  function appendMessage(role, content, scroll = true) {
+    // Remove empty state if present
+    const es = document.getElementById('empty-state');
+    if (es && $messages.contains(es)) $messages.removeChild(es);
+
+    const wrap = document.createElement('div');
+    wrap.className = `message ${role}`;
+    wrap.dataset.role = role;
+
+    const roleLabel = document.createElement('div');
+    roleLabel.className = 'message-role';
+    roleLabel.textContent = role === 'user' ? 'You' : role === 'assistant' ? 'Agent' : role;
+
+    const body = document.createElement('div');
+    body.className = 'message-body';
+    body.innerHTML = renderMarkdown(content);
+
+    wrap.appendChild(roleLabel);
+    wrap.appendChild(body);
+    $messages.appendChild(wrap);
+
+    if (scroll) scrollToBottom();
+    return wrap;
+  }
+
+  let streamEl = null;
+  function startStreamMessage() {
+    const es = document.getElementById('empty-state');
+    if (es && $messages.contains(es)) $messages.removeChild(es);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'message assistant';
+    wrap.id = 'stream-message';
+
+    const roleLabel = document.createElement('div');
+    roleLabel.className = 'message-role';
+    roleLabel.textContent = 'Agent';
+
+    const body = document.createElement('div');
+    body.className = 'message-body';
+    body.innerHTML = '<span class="streaming-cursor"></span>';
+
+    wrap.appendChild(roleLabel);
+    wrap.appendChild(body);
+    $messages.appendChild(wrap);
+    streamEl = body;
+    state.streamBuffer = '';
+    scrollToBottom();
+  }
+
+  function appendStreamToken(token) {
+    if (!streamEl) startStreamMessage();
+    state.streamBuffer += token;
+    streamEl.innerHTML = renderMarkdown(state.streamBuffer) + '<span class="streaming-cursor"></span>';
+    scrollToBottom();
+  }
+
+  function finalizeStream() {
+    if (streamEl) {
+      streamEl.innerHTML = renderMarkdown(state.streamBuffer);
+      streamEl = null;
+    }
+    state.streaming = false;
+    setWorkingState('idle', '');
+    $sendBtn.disabled = false;
+    $stopBtn.classList.remove('visible');
+    scrollToBottom();
+  }
+
+  function appendError(msg) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `background:color-mix(in srgb,var(--error) 10%,transparent);border:1px solid var(--error);border-radius:var(--radius);padding:8px 12px;font-size:11px;color:var(--error);margin-top:4px`;
+    wrap.textContent = '⚠ ' + msg;
+    $messages.appendChild(wrap);
+    scrollToBottom();
+  }
+
+  function appendPatchCard(proposal) {
+    const editLines = proposal.edits.map(e => {
+      const op = e.operation.toUpperCase();
+      const range = e.startLine !== undefined ? `:${e.startLine + 1}` : '';
+      return `  ${op}: ${e.filePath}${range} — ${e.description || ''}`;
+    }).join('\n');
+
+    const card = document.createElement('div');
+    card.className = 'patch-card';
+    card.dataset.proposalId = proposal.id;
+    card.innerHTML = `
+      <div class="patch-card-title"><span>📝</span> Proposed Edit</div>
+      <div class="patch-card-summary">${escHtml(proposal.summary)}</div>
+      <div class="patch-edits">${escHtml(editLines)}</div>
+      <div class="patch-actions">
+        <button class="patch-btn accept" data-id="${proposal.id}">✓ Accept All</button>
+        <button class="patch-btn preview" data-id="${proposal.id}">👁 Preview</button>
+        <button class="patch-btn reject" data-id="${proposal.id}">✕ Reject</button>
+      </div>
+    `;
+    card.querySelector('.accept').addEventListener('click', () => {
+      vscode.postMessage({ type: 'acceptPatch', proposalId: proposal.id });
+      card.style.opacity = '0.5';
+      card.querySelectorAll('button').forEach(b => b.disabled = true);
+      const status = document.createElement('div');
+      status.style.cssText = 'font-size:11px;color:var(--success)';
+      status.textContent = '✓ Accepted — applying edits…';
+      card.appendChild(status);
+    });
+    card.querySelector('.preview').addEventListener('click', () => {
+      vscode.postMessage({ type: 'acceptPatch', proposalId: proposal.id + '__preview' });
+    });
+    card.querySelector('.reject').addEventListener('click', () => {
+      vscode.postMessage({ type: 'rejectPatch', proposalId: proposal.id });
+      card.remove();
+    });
+    $messages.appendChild(card);
+    scrollToBottom();
+  }
+
+  function appendTerminalCard(cmd) {
+    const card = document.createElement('div');
+    card.className = 'terminal-card';
+    card.dataset.commandId = cmd.id;
+    card.innerHTML = `
+      <div class="terminal-card-title"><span>⚡</span> Terminal Command</div>
+      <div class="terminal-command">$ ${escHtml(cmd.command)}</div>
+      <div class="terminal-risk">⚠ ${escHtml(cmd.riskNote)}</div>
+      <div class="terminal-actions">
+        <button class="term-btn run" data-id="${cmd.id}">▶ Run Once</button>
+        <button class="term-btn always" data-id="${cmd.id}">✓ Always Allow</button>
+        <button class="term-btn cancel" data-id="${cmd.id}">✕ Cancel</button>
+      </div>
+    `;
+    card.querySelector('.run').addEventListener('click', () => {
+      vscode.postMessage({ type: 'approveCommand', commandId: cmd.id, alwaysAllow: false });
+      disableCard(card);
+    });
+    card.querySelector('.always').addEventListener('click', () => {
+      vscode.postMessage({ type: 'approveCommand', commandId: cmd.id, alwaysAllow: true });
+      disableCard(card);
+    });
+    card.querySelector('.cancel').addEventListener('click', () => {
+      vscode.postMessage({ type: 'rejectCommand', commandId: cmd.id });
+      card.remove();
+    });
+    $messages.appendChild(card);
+    scrollToBottom();
+  }
+
+  function disableCard(card) {
+    card.style.opacity = '0.5';
+    card.querySelectorAll('button').forEach(b => b.disabled = true);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Working state
+  // ──────────────────────────────────────────────────────────────────────────
+  function setWorkingState(st, label) {
+    if (st === 'idle' || !st) {
+      $workingState.classList.remove('visible');
+    } else {
+      $workingState.classList.add('visible');
+      $workingLabel.textContent = label || 'Working…';
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Actions
+  // ──────────────────────────────────────────────────────────────────────────
+  function selectSession(id) {
+    state.activeSessionId = id;
+    vscode.postMessage({ type: 'selectSession', sessionId: id });
+    renderSessions();
+    const s = state.sessions.find(x => x.id === id);
+    if (s) renderMessages(s);
+  }
+
+  function deleteSession(id) {
+    vscode.postMessage({ type: 'deleteSession', sessionId: id });
+    state.sessions = state.sessions.filter(s => s.id !== id);
+    if (state.activeSessionId === id) {
+      state.activeSessionId = state.sessions[0]?.id ?? null;
+    }
+    renderSessions();
+    const s = state.sessions.find(x => x.id === state.activeSessionId);
+    if (s) renderMessages(s); else showEmptyState();
+  }
+
+  function sendMessage() {
+    const content = $input.value.trim();
+    if (!content || state.streaming) return;
+
+    state.streaming = true;
+    $sendBtn.disabled = true;
+    $stopBtn.classList.add('visible');
+
+    // Optimistic: show user message immediately
+    appendMessage('user', content);
+    startStreamMessage();
+    setWorkingState('generating', 'Generating…');
+
+    vscode.postMessage({
+      type: 'sendMessage',
+      content,
+      sessionId: state.activeSessionId,
+      includeCurrentFile: state.chips.file,
+      includeSelection: state.chips.selection,
+      includeOpenTabs: state.chips.tabs,
+    });
+
+    $input.value = '';
+    $input.style.height = '';
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Markdown renderer (simple, no external deps)
+  // ──────────────────────────────────────────────────────────────────────────
+  function renderMarkdown(md) {
+    if (!md) return '';
+    let html = escHtml(md);
+
+    // Code blocks (``` ... ```)
+    html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
+      `<pre><code class="lang-${lang}">${code}</code></pre>`
+    );
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Bold
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Italic
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // Headings
+    html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    // Blockquote
+    html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+    // HR
+    html = html.replace(/^---+$/gm, '<hr>');
+    // Unordered list
+    html = html.replace(/((?:^[*\-] .+\n?)+)/gm, m =>
+      '<ul>' + m.replace(/^[*\-] (.+)$/gm, '<li>$1</li>') + '</ul>'
+    );
+    // Ordered list
+    html = html.replace(/((?:^\d+\. .+\n?)+)/gm, m =>
+      '<ol>' + m.replace(/^\d+\. (.+)$/gm, '<li>$1</li>') + '</ol>'
+    );
+    // Paragraphs — double newline
+    html = html.replace(/\n\n+/g, '</p><p>');
+    // Single newlines inside paragraphs
+    html = html.replace(/\n/g, '<br>');
+    html = `<p>${html}</p>`;
+    // Clean up around block elements
+    html = html.replace(/<p>(<(?:pre|ul|ol|h[1-4]|blockquote|hr)[^>]*>)/g, '$1');
+    html = html.replace(/(<\/(?:pre|ul|ol|h[1-4]|blockquote|hr)>)<\/p>/g, '$1');
+    html = html.replace(/<p><\/p>/g, '');
+
+    return html;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ──────────────────────────────────────────────────────────────────────────
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function scrollToBottom() {
+    requestAnimationFrame(() => { $messages.scrollTop = $messages.scrollHeight; });
+  }
+  function shortPath(p) {
+    if (!p) return '';
+    const parts = p.replace(/\\/g,'/').split('/');
+    return parts.slice(-2).join('/');
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Event listeners
+  // ──────────────────────────────────────────────────────────────────────────
+  document.getElementById('new-chat-btn').addEventListener('click', () => {
+    vscode.postMessage({ type: 'newChat' });
+  });
+
+  document.getElementById('check-backend-btn').addEventListener('click', () => {
+    vscode.postMessage({ type: 'checkBackend' });
+  });
+
+  $sendBtn.addEventListener('click', sendMessage);
+
+  $stopBtn.addEventListener('click', () => {
+    vscode.postMessage({ type: 'stopGeneration' });
+    finalizeStream();
+    appendMessage('system', '⟨generation stopped⟩', true);
+  });
+
+  $input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  $input.addEventListener('input', () => {
+    $input.style.height = 'auto';
+    $input.style.height = Math.min($input.scrollHeight, 200) + 'px';
+  });
+
+  $modelSelect.addEventListener('change', () => {
+    vscode.postMessage({ type: 'changeModel', model: $modelSelect.value });
+    state.currentModel = $modelSelect.value;
+  });
+
+  document.getElementById('sessions-toggle').addEventListener('click', () => {
+    state.sessionsCollapsed = !state.sessionsCollapsed;
+    document.getElementById('sessions-list').style.display = state.sessionsCollapsed ? 'none' : '';
+    document.getElementById('sessions-arrow').textContent = state.sessionsCollapsed ? '▸' : '▾';
+  });
+
+  // Context chips
+  ['file', 'selection', 'tabs', 'scan'].forEach(key => {
+    const chip = document.getElementById(`chip-${key}`);
+    chip.addEventListener('click', () => {
+      state.chips[key] = !state.chips[key];
+      chip.classList.toggle('active', state.chips[key]);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Boot
+  // ──────────────────────────────────────────────────────────────────────────
+  vscode.postMessage({ type: 'ready' });
+</script>
+</body>
+</html>
