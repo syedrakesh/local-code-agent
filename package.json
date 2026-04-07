@@ -4,6 +4,10 @@
   "description": "A local AI coding assistant powered by Ollama — workspace-aware, privacy-first, no cloud required.",
   "version": "0.1.0",
   "publisher": "local-code-agent",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/syedrakesh/local-code-agent.git"
+  },
   "license": "MIT",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other", "Machine Learning"],
