@@ -1,7 +1,5 @@
 // src/views/ChatViewProvider.ts
 import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
 import {
   ExtensionToWebview,
   WebviewToExtension,
@@ -18,6 +16,7 @@ import { DiagnosticsService } from '../services/DiagnosticsService';
 import { OllamaApiProvider } from '../providers/llm/OllamaApiProvider';
 import { logger } from '../utils/logger';
 import { generateId } from '../utils/helpers';
+import { getChatHtml } from '../webview/chatHtml';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'localCodeAgent.chatView';
@@ -383,11 +382,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  private getHtml(webview: vscode.Webview): string {
-    const htmlPath = path.join(this.extensionUri.fsPath, 'src', 'webview', 'chat.html');
-    let html = fs.readFileSync(htmlPath, 'utf8');
-    // In production, webview resources would use webview.asWebviewUri — for this
-    // self-contained build, the HTML has no external resources.
-    return html;
+  private getHtml(_webview: vscode.Webview): string {
+    // HTML is bundled directly via chatHtml.ts — no disk read needed at runtime.
+    return getChatHtml();
   }
 }
