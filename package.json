@@ -3,7 +3,7 @@
   "displayName": "Local Code Agent",
   "description": "A local AI coding assistant powered by Ollama — workspace-aware, privacy-first, no cloud required.",
   "version": "0.1.0",
-  "publisher": "local-code-agent",
+  "publisher": "SyedRakeshUddin",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/syedrakesh/local-code-agent.git"
@@ -30,7 +30,8 @@
         {
           "type": "webview",
           "id": "localCodeAgent.chatView",
-          "name": "Chat"
+          "name": "Chat",
+          "icon": "media/icon.png"
         }
       ]
     },

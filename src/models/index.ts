@@ -155,10 +155,10 @@ export type WebviewToExtension =
   | { type: 'deleteSession'; sessionId: string }
   | { type: 'renameSession'; sessionId: string; title: string }
   | { type: 'stopGeneration' }
-  | { type: 'acceptPatch'; proposalId: string }
-  | { type: 'rejectPatch'; proposalId: string }
+  | { type: 'acceptPatch'; proposalId: string; sessionId: string }
+  | { type: 'rejectPatch'; proposalId: string; sessionId: string }
   | { type: 'approveCommand'; commandId: string; alwaysAllow: boolean }
-  | { type: 'rejectCommand'; commandId: string }
+  | { type: 'rejectCommand'; commandId: string; sessionId: string }
   | { type: 'checkBackend' }
   | { type: 'changeModel'; model: string }
   | { type: 'scanWorkspace' }

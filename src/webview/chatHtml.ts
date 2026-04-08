@@ -625,8 +625,11 @@ export function getChatHtml(): string {
 
   function appendPatchCard(proposal) {
     const editLines = (proposal.edits || []).map(e =>
-      (e.operation || '?').toUpperCase() + ': ' + e.filePath + (e.startLine !== undefined ? ':' + (e.startLine+1) : '') + (e.description ? ' — ' + e.description : '')
+      (e.operation || '?').toUpperCase() + ': ' + e.filePath +
+      (e.startLine !== undefined ? ':' + (e.startLine+1) : '') +
+      (e.description ? ' — ' + e.description : '')
     ).join('\\n');
+
     const card = document.createElement('div');
     card.className = 'patch-card';
     card.innerHTML =
@@ -637,18 +640,30 @@ export function getChatHtml(): string {
         '<button class="patch-btn accept">✓ Accept All</button>' +
         '<button class="patch-btn preview">👁 Preview</button>' +
         '<button class="patch-btn reject">✕ Reject</button>' +
-      '</div>';
-    card.querySelector('.accept').onclick = () => {
-      vscode.postMessage({ type: 'acceptPatch', proposalId: proposal.id });
-      card.style.opacity = '0.5';
+      '</div>' +
+      '<div class="patch-feedback" style="display:none;font-size:11px;margin-top:4px;"></div>';
+
+    const $feedback = card.querySelector('.patch-feedback');
+
+    const lockCard = (label, color) => {
       card.querySelectorAll('button').forEach(b => b.disabled = true);
+      card.style.opacity = '0.6';
+      $feedback.style.display = 'block';
+      $feedback.style.color = color;
+      $feedback.textContent = label + ' · Agent has been notified.';
+    };
+
+    card.querySelector('.accept').onclick = () => {
+      vscode.postMessage({ type: 'acceptPatch', proposalId: proposal.id, sessionId: S.activeSessionId });
+      lockCard('✓ Accepted — applying edits…', 'var(--success)');
     };
     card.querySelector('.preview').onclick = () =>
-      vscode.postMessage({ type: 'acceptPatch', proposalId: proposal.id + '__preview' });
+      vscode.postMessage({ type: 'acceptPatch', proposalId: proposal.id + '__preview', sessionId: S.activeSessionId });
     card.querySelector('.reject').onclick = () => {
-      vscode.postMessage({ type: 'rejectPatch', proposalId: proposal.id });
-      card.remove();
+      vscode.postMessage({ type: 'rejectPatch', proposalId: proposal.id, sessionId: S.activeSessionId });
+      lockCard('✕ Rejected', 'var(--error)');
     };
+
     $messages.appendChild(card);
     scrollBottom();
   }
@@ -664,11 +679,32 @@ export function getChatHtml(): string {
         '<button class="term-btn run">▶ Run Once</button>' +
         '<button class="term-btn always">✓ Always Allow</button>' +
         '<button class="term-btn cancel">✕ Cancel</button>' +
-      '</div>';
-    const disable = () => { card.style.opacity='0.5'; card.querySelectorAll('button').forEach(b=>b.disabled=true); };
-    card.querySelector('.run').onclick    = () => { vscode.postMessage({ type: 'approveCommand', commandId: cmd.id, alwaysAllow: false }); disable(); };
-    card.querySelector('.always').onclick = () => { vscode.postMessage({ type: 'approveCommand', commandId: cmd.id, alwaysAllow: true });  disable(); };
-    card.querySelector('.cancel').onclick = () => { vscode.postMessage({ type: 'rejectCommand', commandId: cmd.id }); card.remove(); };
+      '</div>' +
+      '<div class="term-feedback" style="display:none;font-size:11px;margin-top:4px;"></div>';
+
+    const $feedback = card.querySelector('.term-feedback');
+
+    const lockCard = (label, color) => {
+      card.querySelectorAll('button').forEach(b => b.disabled = true);
+      card.style.opacity = '0.6';
+      $feedback.style.display = 'block';
+      $feedback.style.color = color;
+      $feedback.textContent = label + ' · Agent has been notified.';
+    };
+
+    card.querySelector('.run').onclick = () => {
+      vscode.postMessage({ type: 'approveCommand', commandId: cmd.id, alwaysAllow: false });
+      lockCard('▶ Running…', 'var(--warn)');
+    };
+    card.querySelector('.always').onclick = () => {
+      vscode.postMessage({ type: 'approveCommand', commandId: cmd.id, alwaysAllow: true });
+      lockCard('✓ Approved (always allowed)', 'var(--success)');
+    };
+    card.querySelector('.cancel').onclick = () => {
+      vscode.postMessage({ type: 'rejectCommand', commandId: cmd.id, sessionId: S.activeSessionId });
+      lockCard('✕ Cancelled', 'var(--error)');
+    };
+
     $messages.appendChild(card);
     scrollBottom();
   }

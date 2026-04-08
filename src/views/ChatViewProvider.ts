@@ -112,12 +112,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
           return;
         }
-        await this.applyPatch(msg.proposalId);
+        await this.applyPatch(msg.proposalId, msg.sessionId);
         break;
       }
 
       case 'rejectPatch': {
-        this.patchSvc.rejectProposal(msg.proposalId);
+        await this.rejectPatch(msg.proposalId, msg.sessionId);
         break;
       }
 
@@ -127,7 +127,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
 
       case 'rejectCommand': {
-        this.terminalSvc.rejectCommand(msg.commandId);
+        await this.rejectCommand(msg.commandId, msg.sessionId);
         break;
       }
 
@@ -281,21 +281,91 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.postMessage({ type: 'workingState', state: 'idle' as WorkingState, label: '' });
   }
 
-  private async applyPatch(proposalId: string): Promise<void> {
+  private async applyPatch(proposalId: string, sessionId: string): Promise<void> {
     this.postMessage({ type: 'workingState', state: 'preparing-diff' as WorkingState, label: 'Applying edits…' });
+
+    const proposal = this.patchSvc.getProposal(proposalId);
+    if (!proposal) {
+      this.postMessage({ type: 'workingState', state: 'idle' as WorkingState, label: '' });
+      return;
+    }
+
+    let feedbackMsg: string;
 
     try {
       const { applied, errors } = await this.patchSvc.applyProposal(proposalId);
+
+      // Build a precise, structured feedback message so the agent knows exactly
+      // what changed and can reason correctly in the next turn.
+      const editSummaries = proposal.edits.map((e, i) => {
+        const failed = errors.find(err => err.includes(e.filePath));
+        const status = failed ? '❌ FAILED' : '✅ applied';
+        const range = e.startLine !== undefined
+          ? ` (lines ${e.startLine + 1}–${(e.endLine ?? e.startLine) + 1})`
+          : '';
+        return `  ${i + 1}. [${status}] ${e.operation.toUpperCase()} \`${e.filePath}\`${range}` +
+          (e.description ? ` — ${e.description}` : '') +
+          (failed ? `\n     Error: ${failed}` : '');
+      }).join('\n');
+
       if (errors.length > 0) {
-        vscode.window.showWarningMessage(`Applied ${applied} edits with ${errors.length} error(s):\n${errors.join('\n')}`);
+        feedbackMsg =
+          `**Edit result: partially applied** (${applied}/${proposal.edits.length} edits succeeded)\n\n` +
+          `**Summary:** ${proposal.summary}\n\n` +
+          `**Edit outcomes:**\n${editSummaries}\n\n` +
+          `The ${errors.length} failed edit(s) were NOT applied. ` +
+          `Please account for this — the affected files remain unchanged.`;
+        vscode.window.showWarningMessage(`Applied ${applied}/${proposal.edits.length} edits. ${errors.length} failed.`);
       } else {
+        feedbackMsg =
+          `**Edit result: all edits accepted and applied ✅**\n\n` +
+          `**Summary:** ${proposal.summary}\n\n` +
+          `**Applied edits:**\n${editSummaries}\n\n` +
+          `All ${applied} edit(s) are now live in the workspace. ` +
+          `Treat these changes as the current state of the codebase going forward.`;
         vscode.window.showInformationMessage(`✓ Applied ${applied} edit(s) successfully.`);
       }
     } catch (err) {
-      vscode.window.showErrorMessage(`Failed to apply edits: ${err instanceof Error ? err.message : String(err)}`);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      feedbackMsg =
+        `**Edit result: failed to apply ❌**\n\n` +
+        `**Summary:** ${proposal.summary}\n\n` +
+        `An error prevented any edits from being applied: ${errMsg}\n\n` +
+        `No files were changed. Please try a different approach.`;
+      vscode.window.showErrorMessage(`Failed to apply edits: ${errMsg}`);
     }
 
+    // Persist the outcome as a tool message so it appears in chat history
+    // and is included in the next LLM context window.
+    await this.sessions.addMessage(sessionId, 'tool', feedbackMsg);
+    const updated = this.sessions.getSession(sessionId);
+    if (updated) this.postMessage({ type: 'sessionUpdate', session: updated });
+
     this.postMessage({ type: 'workingState', state: 'idle' as WorkingState, label: '' });
+  }
+
+  private async rejectPatch(proposalId: string, sessionId: string): Promise<void> {
+    const proposal = this.patchSvc.getProposal(proposalId);
+    this.patchSvc.rejectProposal(proposalId);
+
+    // Tell the agent the edits were explicitly rejected so it doesn't
+    // re-propose the same changes or assume they were applied.
+    const editSummaries = (proposal?.edits ?? []).map((e, i) =>
+      `  ${i + 1}. ${e.operation.toUpperCase()} \`${e.filePath}\`` +
+      (e.description ? ` — ${e.description}` : '')
+    ).join('\n');
+
+    const feedbackMsg =
+      `**Edit result: rejected by user ❌**\n\n` +
+      `**Summary:** ${proposal?.summary ?? '(unknown proposal)'}\n\n` +
+      (editSummaries ? `**Rejected edits:**\n${editSummaries}\n\n` : '') +
+      `The user declined these changes. No files were modified. ` +
+      `If you want to try again, please ask the user what they'd like done differently, ` +
+      `or propose an alternative approach.`;
+
+    await this.sessions.addMessage(sessionId, 'tool', feedbackMsg);
+    const updated = this.sessions.getSession(sessionId);
+    if (updated) this.postMessage({ type: 'sessionUpdate', session: updated });
   }
 
   private async runApprovedCommand(commandId: string, alwaysAllow: boolean, workspaceRoot: string): Promise<void> {
@@ -306,21 +376,52 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this.postMessage({ type: 'workingState', state: 'running-command' as WorkingState, label: `Running: ${cmd.command}` });
 
+    let feedbackMsg: string;
+
     try {
       const output = await this.terminalSvc.executeCommand(commandId, workspaceRoot);
       this.postMessage({ type: 'terminalOutput', commandId, output });
 
-      // Feed output back to chat
-      if (output && cmd.sessionId) {
-        await this.sessions.addMessage(cmd.sessionId, 'tool', `Command output:\n\`\`\`\n${output}\n\`\`\``);
-        const s = this.sessions.getSession(cmd.sessionId);
-        if (s) this.postMessage({ type: 'sessionUpdate', session: s });
-      }
+      feedbackMsg =
+        `**Command result: completed ✅**\n\n` +
+        `\`\`\`\n$ ${cmd.command}\n\`\`\`\n\n` +
+        (output
+          ? `**Output:**\n\`\`\`\n${output}\n\`\`\``
+          : `*(no output)*`) +
+        (alwaysAllow ? '\n\n*(This command is now always allowed for this session.)*' : '');
     } catch (err) {
-      vscode.window.showErrorMessage(`Command failed: ${err instanceof Error ? err.message : String(err)}`);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      feedbackMsg =
+        `**Command result: failed ❌**\n\n` +
+        `\`\`\`\n$ ${cmd.command}\n\`\`\`\n\n` +
+        `Error: ${errMsg}\n\n` +
+        `The command did not complete successfully. Please account for this in your next response.`;
+      vscode.window.showErrorMessage(`Command failed: ${errMsg}`);
+    }
+
+    if (cmd.sessionId) {
+      await this.sessions.addMessage(cmd.sessionId, 'tool', feedbackMsg);
+      const s = this.sessions.getSession(cmd.sessionId);
+      if (s) this.postMessage({ type: 'sessionUpdate', session: s });
     }
 
     this.postMessage({ type: 'workingState', state: 'idle' as WorkingState, label: '' });
+  }
+
+  private async rejectCommand(commandId: string, sessionId: string): Promise<void> {
+    const cmd = this.terminalSvc.getCommand(commandId);
+    this.terminalSvc.rejectCommand(commandId);
+
+    const feedbackMsg =
+      `**Command result: rejected by user ❌**\n\n` +
+      `\`\`\`\n$ ${cmd?.command ?? commandId}\n\`\`\`\n\n` +
+      `The user declined to run this command. It was not executed. ` +
+      `If the task still needs this step, ask the user why they rejected it ` +
+      `or suggest an alternative.`;
+
+    await this.sessions.addMessage(sessionId, 'tool', feedbackMsg);
+    const updated = this.sessions.getSession(sessionId);
+    if (updated) this.postMessage({ type: 'sessionUpdate', session: updated });
   }
 
   private async sendInit(): Promise<void> {
